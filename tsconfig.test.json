@@ -4,5 +4,5 @@
     "lib": ["ES2023"],
     "types": ["node"]
   },
-  "include": ["tests/**/*.ts", "src/rules.ts"]
+  "include": ["tests/**/*.ts"]
 }

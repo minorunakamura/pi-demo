@@ -1,4 +1,7 @@
-import { createInitialState, getLegalMoves, getResult, playMove } from './rules.ts';
+import { createGame } from './game.ts';
+import type { RunCpu } from './game.ts';
+import { getLegalMoves, getResult } from './rules.ts';
+import type { GameState } from './rules.ts';
 
 const board = document.querySelector<HTMLDivElement>('#board')!;
 const turn = document.querySelector<HTMLParagraphElement>('#turn')!;
@@ -6,7 +9,20 @@ const score = document.querySelector<HTMLParagraphElement>('#score')!;
 const lastMove = document.querySelector<HTMLParagraphElement>('#last-move')!;
 const pass = document.querySelector<HTMLParagraphElement>('#pass')!;
 const reset = document.querySelector<HTMLButtonElement>('#reset')!;
-let state = createInitialState();
+
+const runCpu: RunCpu = (board, complete, fail) => {
+  const worker = new Worker(new URL('./cpu.worker.ts', import.meta.url), { type: 'module' });
+  worker.onmessage = (event: MessageEvent<unknown>) => complete(event.data);
+  worker.onerror = fail;
+  worker.onmessageerror = fail;
+  try {
+    worker.postMessage(board);
+  } catch (error) {
+    worker.terminate();
+    throw error;
+  }
+  return () => worker.terminate();
+};
 
 function coordinate(index: number): string {
   return `${'ABCDEFGH'[index % 8]}${Math.floor(index / 8) + 1}`;
@@ -24,18 +40,12 @@ const cells = Array.from({ length: 64 }, (_, index) => {
   const stone = document.createElement('span');
   stone.setAttribute('aria-hidden', 'true');
   button.append(label, stone);
-  button.addEventListener('click', () => {
-    if (state.turn !== 'black' || state.status !== 'playing') return;
-    const next = playMove(state, index);
-    if (next === state) return;
-    state = next;
-    render();
-  });
+  button.addEventListener('click', () => game.humanMove(index));
   board.append(button);
   return { button, stone };
 });
 
-function render(): void {
+function render(state: GameState): void {
   const legalMoves = state.status === 'playing' && state.turn === 'black'
     ? getLegalMoves(state.board, state.turn) : [];
   const result = getResult(state);
@@ -57,7 +67,7 @@ function render(): void {
   } else {
     turn.textContent = state.turn === 'black'
       ? '黒（あなた）の手番です。＋のマスを選んでください。'
-      : '白の手番です。CPUは未接続のため、ここで停止します。';
+      : '白（CPU）の手番です。思考中…';
   }
   score.textContent = `黒：${result.black}　白：${result.white}`;
   lastMove.textContent = state.lastMove === null ? '直前の着手：なし' : `直前の着手：${coordinate(state.lastMove)}（★）`;
@@ -66,9 +76,6 @@ function render(): void {
   reset.textContent = state.status === 'finished' ? 'もう一度遊ぶ' : '最初から';
 }
 
-reset.addEventListener('click', () => {
-  state = createInitialState();
-  render();
-});
-
-render();
+const game = createGame(runCpu, render);
+reset.addEventListener('click', () => game.restart());
+render(game.getState());
